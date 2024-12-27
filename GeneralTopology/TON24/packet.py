@@ -9,5 +9,10 @@ class Packet:
         self.priority = priority
         self.length = length
         self.create_time = round(create_time, 2)
+        self.state_map = dict()
         self.arrival_time = dict()
+        self.in_queue_time = dict()
+        self.out_queue_time = dict()
+        self.all_one_hop_delay = dict()
         self.trans_path = [src_node_id]
+        self.e2ed_delay = 0

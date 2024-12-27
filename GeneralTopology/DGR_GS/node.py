@@ -1,6 +1,4 @@
 import random
-import time
-
 from route import RouteTb
 from packet import Packet
 from GeneralTopology.util.utils import *

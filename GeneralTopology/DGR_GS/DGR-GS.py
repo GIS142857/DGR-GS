@@ -1,10 +1,6 @@
 from GeneralTopology.DGR_GS.simulator import Simulator
 from config import *
 
-
-
-
-
 def main():
     sim = Simulator(SIM_TIME, SUM_NODES, SRC, DES, ADJ_TABLE, NODE_POSITION, FRAME_SLOT, SLOT_DURATION, ARRIVAL_RATE)
     for e in range(episodes):
