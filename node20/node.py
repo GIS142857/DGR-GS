@@ -254,9 +254,7 @@ class NODE:
                 action = self.packets[i].action
                 action_index = self.packets[i].action_index
                 reward = self.packets[i].reward + queue_delay
-                #print('sample_queue_delay', queue_delay)
-                # print('state', state)
-                # print('action', action)
+
                 next_state = self.packets[i].next_state
                 #print('next_state', next_state)
                 next_state[0] = (next_state[0] * normal[0] - queue_delay) / normal[0]

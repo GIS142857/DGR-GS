@@ -7,12 +7,14 @@ from config import *
 from agent import Agent
 from packet import Packet
 from tensorboardX import SummaryWriter
-from GeneralTopology.TON24.TonMacLayer import TonMacLayer
-from GeneralTopology.TON24.TonPhyLayer import TonPhyLayer
+from tonMacLayer import TonMacLayer
+from tonPhyLayer import TonPhyLayer
 
-writer1 = SummaryWriter(log_dir='log999_11')
-writer2 = SummaryWriter(log_dir='log999_22')
-writer3 = SummaryWriter(log_dir='log999_33')
+
+writer0 = SummaryWriter(log_dir='log999_0')
+writer1 = SummaryWriter(log_dir='log999_1')
+writer2 = SummaryWriter(log_dir='log999_2')
+writer3 = SummaryWriter(log_dir='log999_3')
 
 
 class Node(object):
@@ -32,8 +34,8 @@ class Node(object):
         self.neighbors = ADJ_TABLE[self.id]
         self.nb_pri_queues = {key: {'flow1': 0, 'flow2': 0, 'flow3': 0} for key in self.neighbors}
         self.send_cnt = 0
-        self.reces_for_me = []
-        self.has_reces = []
+        self.recv_for_me = []
+        self.has_recv = []
         self.timeout = self.sim.timeout
         self.start_time = 0
         self.device = device
@@ -43,15 +45,30 @@ class Node(object):
         self.loss_num2 = 0
         self.path_num = 0
         self.e2ed = []
-        self.episode = 0
         self.sum_sources = len(SRC)
         self.sum_nodes = SUM_NODES
-        self.state_dim = len(self.neighbors) + 1
+        self.state_dim = 4
         self.end_to_end_delay = {}
 
     @property
     def now(self):
         return self.sim.env.now
+
+    def reset(self):
+        self.phy.reset()
+        self.mac.reset()
+        self.nb_pri_queues = {key: {'flow1': 0, 'flow2': 0, 'flow3': 0} for key in self.neighbors}
+        self.send_cnt = 0
+        self.recv_for_me = []
+        self.has_recv = []
+        self.timeout = self.sim.timeout
+        self.start_time = self.sim.env.now
+        self.loss_history = []
+        self.loss_num1 = 0
+        self.loss_num2 = 0
+        self.path_num = 0
+        self.e2ed = []
+        self.end_to_end_delay = {}
 
     def setAgent(self):
         # Set an agent for the node to learn the delay distribution
@@ -80,7 +97,9 @@ class Node(object):
         # print(packet.des, self.id, self.neighbors)
         # print(self.id, packet.des, self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des))
         next_node = random.choices(self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des_node_id))[0]
-        # print('best:', self.get_best_action(packet))
+        if self.sim.episode > 500:
+            print('best:', self.get_best_action(packet))
+
         return next_node
 
     def dfs_find_all_paths(self, adj_table, start, target, path=None, all_paths=None):
@@ -108,87 +127,44 @@ class Node(object):
         return all_paths
 
     def get_best_action(self, packet):
-        # calculate worst delay of each path
-        # print('neighbor', neighbor)
-        txtpath = './CDF_data/E2ED_' + str(self.id) + '.txt'
-        with open(txtpath, 'r') as fl:
-            js = fl.read()
-            dis_set = json.loads(js)
+        if packet.des_node_id in self.neighbors:
+            return packet.des_node_id
+        state = [packet.des_node_id]
+        for nb in self.neighbors:
+            state.append(self.nb_pri_queues[nb][packet.flow_type])
+        while len(state) < 4:
+            state.append(0)
+        state = torch.tensor(state, dtype=torch.float32)
+        state = state.to(self.device)
+        qu = self.agent.model.forward(1, state)
+        qu = qu.reshape(1, -1).squeeze().detach()
+        # print('qu', qu)
+        worst_delay = qu[-1]
+        print('worst_delay', worst_delay)
+        l = int(len(qu) / 2)
+        average_delay = qu.mean()
+        return worst_delay
 
-        worstD_list = []
-        aveD_list = []
-        cand_neighbors = []
-        # print('dis_set', dis_set)
-        # print('keys', dis_set[str(packet.priority)].keys())
-        path_set = []
-        for key in dis_set[str(packet.priority)].keys():
-            arry = key.split('_')
-            arry = list(map(int, arry))
-            path_set.append(arry)
-        print('paths', path_set)
-        for path in path_set:
-            # path_list.append(path)
-            state_flow = np.zeros(len(SRC))
-            # print(state_flow, packet.priority)
-            state_flow[packet.priority] = 1
-            # print('state_flow', state_flow)
-            state_node = np.zeros(SUM_NODES)
-            neighbor = path[1]
-            # print('i', i, 'sub_traverse_nodes', traverse_nodes[i:])
-            # print('pri', packet.priority)
-            for j in path:
-                state_node[j] = 1
-            print('state_node', state_node)
-            state = np.concatenate((state_flow, state_node))
-            print("state: ", neighbor)
-            state = torch.tensor(state, dtype=torch.float32)
-            qu = self.sim.nodes[neighbor].agent.model.forward(1, state)
-            qu = qu.reshape(1, -1).squeeze().detach()
-            # print('qu', qu)
-            # print('worst_delay', qu[-1])
-            worst_delay = qu[-1]
-            l = int(len(qu) / 2)
-            average_delay = qu.mean()
-            print('aved', packet)
-            if worst_delay <= packet.deadline:
-                cand_neighbors.append(neighbor)
-                aveD_list.append(average_delay)
 
-        if len(aveD_list) > 0:
-            idx = aveD_list.index(min(aveD_list))
-            next_node = cand_neighbors[idx]
-            return next_node
-        # else:
-        #     return None
-
-    def run(self, episode):
-        duration = 1
+    def run(self):
+        duration = self.sim.sim_time/2  # 发包时间
         deadline = DEADLINE[FLOW_MAP[self.id]]
         des_node_id = FLOW_DICT[self.id]
         flow_type = FLOW_MAP[self.id]
-        priority = 1
         while self.now < self.start_time + duration:
             if self.id == 0:
-                lamda = 1.0 / self.arrival_rate
-                interval = random.expovariate(lamda)
+                priority = self.packet_pri
+                interval = self.arrival_rate
             elif self.id == 1:
-                rand = np.random.random()
-                seed = 1
-                if rand < 0.8:
-                    seed = 2
-                if seed == 2:
-                    lamda = 1.0 / self.sim.arrival_rates[FLOW_MAP[self.id]]
-                    interval = random.expovariate(lamda)
-                    #print('interval', interval)
-                else:
-                    lamda = 1.0 / (self.sim.arrival_rates[FLOW_MAP[self.id]] / 2)
-                    interval = random.expovariate(lamda)
+                priority = self.packet_pri
+                interval = self.arrival_rate
             else:
-                interval = self.sim.arrival_rates[FLOW_MAP[self.id]]
+                priority = self.packet_pri
+                interval = self.arrival_rate
 
             yield self.sim.env.timeout(interval)
             self.send_cnt += 1
-            packet_id = str(self.id) + '_' + str(self.send_cnt) + '_' + str(des_node_id) + '_' + str(episode)
+            packet_id = str(self.id) + '_' + str(self.send_cnt) + '_' + str(des_node_id) + '_' + str(self.sim.episode)
             packet = Packet(self.id, des_node_id, packet_id, 'data', flow_type, 'training', priority, PACKET_LENGTH,
                             self.now)
             packet.arrival_time[self.id] = round(self.now, 2)
@@ -196,44 +172,34 @@ class Node(object):
             next_node = self.get_nextnode(packet)
             self.mac.send_pdu(packet, next_node)
 
-    def addsamples(self, packet, isUpdate):
-        rewards = packet.e2ed_delay  # the cumulative rewards
+    def add_samples(self, packet):
         for i in range(len(packet.trans_path) - 1):
             pwd_node = packet.trans_path[i]
             next_node = packet.trans_path[i + 1]
-            key = str(pwd_node) + '_' + str(next_node)
             state = packet.state_map[pwd_node]
-            print('state', state)
             action = next_node
             done = 1
+            # 判断 next_node 的下标
             action_idx = 0
-            next_state = packet.state_map[next_node]
-            print('next_state', next_state)
-            rewards -= packet.all_one_hop_delay[key]
+            for nb in self.sim.nodes[pwd_node].neighbors:
+                if nb == next_node:
+                    break
+                action_idx += 1
+            next_state = copy.deepcopy(state)
+            next_state[action_idx + 1] = next_state[action_idx + 1] + 1
+            reward = packet.out_queue_time[next_node] - packet.out_queue_time[pwd_node]
             state = torch.tensor(state, dtype=torch.float)
             next_state = torch.tensor(next_state, dtype=torch.float)
-            self.sim.nodes[pwd_node].agent.replay_memory.add(state, action, action_idx, rewards, next_state, done)
+            self.sim.nodes[pwd_node].agent.replay_memory.add(state, action, action_idx, reward, next_state, done)
 
-        if self.episode > 500 and isUpdate:
-            temp = copy.deepcopy(packet.trans_path)
-            temp.reverse()
-            loss = self.train(temp)
-            self.path_num += 1
-            writer2.add_scalar('loss', loss, self.path_num)
-            print('update_loss', loss)
-
-    def train(self, trans_path):
-        # train the qrdqn of each node
-        sumloss = 0
-        for node_id in trans_path[:-1]:  # nodes_list
-            node = self.sim.nodes[node_id]
-            replay_memory = self.sim.nodes[node].agent.replay_memory
-            if replay_memory._num >= 1:  # batch_size:
-                loss = self.optimize_adam(node)
-                self.sim.nodes[node].agent.save_model('E2E')
-                sumloss += loss
-        sumloss = sumloss / (len(trans_path) - 1)
-        return sumloss
+    def train(self):
+        loss = 0
+        replay_memory = self.agent.replay_memory
+        if replay_memory._num >= self.sim.batch_size:  # batch_size:
+            loss = self.optimize_adam()
+            if self.sim.episode % 100 == 0:
+                self.agent.save_model('E2E')
+        return loss
 
     def calculate_huber_loss(self, td_errors, kappa=1.0):
         return torch.where(
@@ -244,7 +210,6 @@ class Node(object):
     def calculate_quantile_huber_loss(self, td_errors, taus, kappa=1.0, weights=None):
         assert not taus.requires_grad
         batch_size, N, N_dash = td_errors.shape
-
         # Calculate huber loss element-wisely.
         element_wise_huber_loss = self.calculate_huber_loss(td_errors, kappa)
         assert element_wise_huber_loss.shape == (
@@ -255,203 +220,121 @@ class Node(object):
         ) * element_wise_huber_loss / kappa
         assert element_wise_quantile_huber_loss.shape == (
             batch_size, N, N_dash)
-        # print('element_wise_quantile_huber_loss', element_wise_quantile_huber_loss)
-
         # Quantile huber loss.
-        batch_quantile_huber_loss = element_wise_quantile_huber_loss.sum(
-            dim=1).mean(dim=1, keepdim=True)
-        # print('batch_quantile_huber_loss', batch_quantile_huber_loss)
+        batch_quantile_huber_loss = element_wise_quantile_huber_loss.sum(dim=1).mean(dim=1, keepdim=True)
         assert batch_quantile_huber_loss.shape == (batch_size, 1)
-
         if weights is not None:
             quantile_huber_loss = (batch_quantile_huber_loss * weights).mean()
         else:
             quantile_huber_loss = batch_quantile_huber_loss.mean()
-
         return quantile_huber_loss
 
-    def calculate_loss(self, batch_size, states, actions, action_idxs, rewards, next_states, dones,
-                       node):  ### batch_size, states, actions, rewards, next_states, dones
+    def calculate_loss(self, batch_size, states, actions, action_idxs, rewards, next_states, dones, node):
         # Calculate quantile values of current states and actions at taus.
+        current_s_quantiles = node.agent.model.forward(batch_size, states)
+        # print(current_s_quantiles, action_idxs)
+        current_sa_quantiles = torch.zeros(batch_size, node.agent.tau_N, 1).to(self.device)
+        for i in range(batch_size):
+            current_sa_quantiles[i] = current_s_quantiles[i, :, int(action_idxs[i])].unsqueeze(-1)
+        print(current_sa_quantiles.shape)
+        # assert current_sa_quantiles.shape == (batch_size, node.agent.tau_N, node.agent.model.num_actions)
 
-        var_s = torch.tensor(states, dtype=torch.float)
-        var_s = var_s.to(self.device)
-
-        # print('node', node)
-        #print('var_s', var_s)
-
-        current_sa_quantiles = self.sim.nodes[node].agent.model.forward(batch_size, var_s)
-
-        assert current_sa_quantiles.shape == (batch_size, self.sim.nodes[node].agent.tau_N, 1)
+        # Initialize target_sa_quantiles as an empty tensor to concatenate in the loop
+        target_sa_quantiles = torch.zeros(batch_size, node.agent.tau_N, 1).to(self.device)
 
         with torch.no_grad():
-
-            var_next_s = torch.tensor(next_states[0], dtype=torch.float)
-            var_next_s = var_next_s.to(self.device)
-            rewards = torch.tensor(rewards).to(self.device)
-
-            next_node = int(actions[0])
-
-            if dones[0] == 1:
-                unit = [0.0]
-                next_qu = []
-                for m in range(self.sim.nodes[node].agent.tau_N):
-                    next_qu.append(unit)
-                next_qu = torch.tensor(next_qu).unsqueeze(0).to(self.device)
-            else:
-                next_qu = self.sim.nodes[next_node].agent.model.forward(1, var_next_s)
-
-            target_sa_quantiles = next_qu
-            for j in range(next_qu.shape[1]):
-                target_sa_quantiles[0][j][0] = rewards[0] + (1.0 - dones[0]) * next_qu[0][j][0]
-
-            for i in range(1, batch_size):
-                var_next_s = torch.tensor(next_states[i], dtype=torch.float)
-                var_next_s = var_next_s.to(self.device)
+            for i in range(batch_size):
+                var_next_s = next_states[i]
                 next_node = int(actions[i])
-                if dones[i] == 1:
-                    unit = [0.0]
-                    next_qu_ = []
-                    for m in range(self.sim.nodes[node].agent.tau_N):
-                        next_qu_.append(unit)
-                    next_qu_ = torch.tensor(next_qu_).unsqueeze(0).to(self.device)
-
-                else:
-                    next_qu_ = self.sim.nodes[next_node].agent.model.forward(1, var_next_s)
-
-                target_sa_quantiles_ = next_qu_
+                next_qu_ = node.agent.model.forward(1, var_next_s)
+                # 计算每个动作分布的平均值
+                action_means = next_qu_.mean(dim=-1)  # Shape: [64, 500]
+                # 找到平均值最小的动作索引
+                min_action_indices = action_means.argmin(dim=-1)  # Shape: [64]
+                # 初始化用于存储最小动作分布的张量
+                min_action_distributions = torch.zeros(1, 500, 1)  # Shape: [1, 500, 1]
+                # 提取对应动作的分布
+                min_action_distributions[:, :, 0] = next_qu_[:, :, min_action_indices[i]]
+                target_sa_quantiles_ = min_action_distributions
                 for j in range(next_qu_.shape[1]):
-                    target_sa_quantiles_[0][j][0] = rewards[i] + (1.0 - dones[i]) * next_qu_[0][j][0]
-
+                    target_sa_quantiles_[0][j][0] = rewards[i]/1000 + (1.0 - dones[i]) * next_qu_[0][j][0]
                 target_sa_quantiles = torch.cat((target_sa_quantiles, target_sa_quantiles_), 0)
-
             target_qu = target_sa_quantiles
             target_qu = target_qu.transpose(1, 2)
             target_qu = target_qu.to(self.device)
 
-            assert target_qu.shape == (batch_size, 1, self.sim.nodes[node].agent.tau_N)
+        # print(current_sa_quantiles, target_qu)
+        print(target_qu.shape, current_sa_quantiles.shape)
 
         td_errors = target_qu - current_sa_quantiles
-        assert td_errors.shape == (batch_size, self.sim.nodes[node].agent.tau_N, self.sim.nodes[node].agent.tau_N)
-        tau_N = self.sim.nodes[node].agent.tau_N
+        tau_N = node.agent.tau_N
         taus = torch.arange(0, tau_N + 1, device=self.device, dtype=torch.float32) / tau_N
         tau_hats = ((taus[1:] + taus[:-1]) / 2.0).view(1, tau_N)
-
         kappa = 1
         quantile_huber_loss = self.calculate_quantile_huber_loss(td_errors, tau_hats, kappa)
-
         return quantile_huber_loss, td_errors.detach().abs().sum(dim=1).mean(dim=1, keepdim=True)
 
-    def optimize_adam(self, node):  ### 优化QRDQN参数
-        # print('node optimize', node)
+    def optimize_adam(self):  ### 优化QRDQN参数
         batch_size = self.sim.batch_size
         # Buffer for storing the loss-values of the most recent batches.
         sum_loss = 0
         sum_train = 0
-
         loss_sum = 0
-
-        sample_keys = self.sim.nodes[node].agent.replay_memory.get_sample_keys()
-        # print('sample_keys', sample_keys)
+        sample_keys = self.agent.replay_memory.get_sample_keys(10)
+        # print('sample_keys:', sample_keys[0], len(sample_keys))
         for key in sample_keys:
-            size = self.sim.batch_size
-            epochs = int(self.sim.nodes[node].agent.replay_memory.memory[key]._n / batch_size)
-            if epochs == 0:
-                epochs = 1
-            if epochs > 3:
-                epochs = 3
+            states, actions, action_idxs, rewards, next_states, dones = self.agent.replay_memory.sample_on_key(batch_size, key)
+            # print(states, actions, action_idxs, rewards, next_states, dones)
+            quantile_loss, errors = self.calculate_loss(
+                batch_size, states, actions, action_idxs, rewards, next_states, dones, self)
+            assert errors.shape == (batch_size, 1)
+            loss = quantile_loss
+            loss_sum += loss
+            sum_loss += loss.data
+            sum_train += 1
+            self.agent.model.lr = 0.001
+            print('loss', loss, 'node', self.id)
+            opt = self.agent.model.opt
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
 
-            for _ in range(epochs):
-                # print('memory_key', key, size)
-                states, actions, action_idxs, rewards, next_states, dones = self.sim.nodes[
-                    node].agent.replay_memory.sample_on_key(size, key)
-
-                quantile_loss, errors = self.calculate_loss(
-                    size, states, actions, action_idxs, rewards, next_states, dones, node)
-                assert errors.shape == (size, 1)
-
-                # print('errors', errors)
-
-                loss = quantile_loss
-                loss_sum += loss
-
-                sum_loss += loss.data
-                sum_train += 1
-                self.sim.nodes[node].agent.model.lr = 0.0005
-
-                print('loss', loss, 'node', node)
-
-                # sum_loss += objective_loss
-                # self.graph.node_list[node].agent.model.set_lr(learning_rate)
-
-                opt = self.sim.nodes[node].agent.model.opt
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-
-        if node == 0:
+        if self.id == 0:
             avg_loss = sum_loss / sum_train
             self.loss_history.append(avg_loss)
             self.loss_num1 += 1
-            writer1.add_scalar('loss', avg_loss, self.loss_num1)
-        elif node == 2:
+            writer0.add_scalar('loss', avg_loss, self.loss_num1)
+        elif self.id == 1:
             avg_loss = sum_loss / sum_train
-            # self.loss_history.append(avg_loss)
             self.loss_num2 += 1
-            writer3.add_scalar('loss', avg_loss, self.loss_num2)
+            writer1.add_scalar('loss', avg_loss, self.loss_num2)
+        elif self.id == 2:
+            avg_loss = sum_loss / sum_train
+            self.loss_num2 += 1
+            writer2.add_scalar('loss', avg_loss, self.loss_num2)
         loss_sum /= sum_train
         return loss_sum
 
     def on_receive_pdu(self, packet):  # receive_pdu(pdu.src, pdu.payload)
-        if packet.id in self.has_reces:
+        if packet.id in self.has_recv:
             return
-        self.has_reces.append(packet.id)
+        self.has_recv.append(packet.id)
         prev_node = packet.trans_path[-1]
         packet.trans_path.append(self.id)
-        key1 = str(prev_node) + '_' + str(self.id)
-        key2 = str(prev_node)
         # calculate the one hop delay from the last node to the current node
-        one_hop_delay = self.now - packet.arrival_time[key2]
-        packet.all_one_hop_delay[key1] = one_hop_delay
-        packet.e2ed_delay += one_hop_delay
-        # print(packet.des, self.id)
+        one_hop_delay = self.now - packet.arrival_time[prev_node]
+        packet.e2ed_delay += round(one_hop_delay, 2)
         if packet.des_node_id != self.id:
             next_node = self.get_nextnode(packet)
             self.mac.send_pdu(packet, next_node)
         else:
-            self.reces_for_me.append(packet.id)
-            self.e2ed.append(packet.e2ed_delay)
-            print(packet.e2ed_delay)
-            update = False
-            if len(self.reces_for_me) % 10 == 0:
-                update = True
-            self.addsamples(packet, update)
-
-            # Record the actual delay experienced by the packet
-            for l in range(len(packet.trans_path) - 1):
-                node_ = packet.trans_path[l]
-                sub_path = packet.trans_path[l:]
-                sum_delay = 0
-                path = [str(x) for x in sub_path]
-                path = "_".join(path)
-                for j in range(len(sub_path) - 1):
-                    key = str(sub_path[j]) + '_' + str(sub_path[j + 1])
-                    sum_delay += packet.travase_delay[key]
-
-                if str(packet.priority) not in self.sim.nodes[node_].end_to_end_delay.keys():
-                    self.sim.nodes[node_].end_to_end_delay[str(packet.priority)] = {
-                        path: {str(sum_delay): 1}}
-                else:
-                    if path not in self.sim.nodes[node_].end_to_end_delay[str(packet.priority)].keys():
-                        # print('path not in')
-                        self.sim.nodes[node_].end_to_end_delay[str(packet.priority)][path] = {
-                            str(sum_delay): 1}
-                        # print('bfnode2', node_, self.graph.node_list[node_].end_to_end_delay)
-                    else:
-                        if str(sum_delay) not in self.sim.nodes[node_].end_to_end_delay[str(packet.priority)][
-                            path].keys():
-                            self.sim.nodes[node_].end_to_end_delay[str(packet.priority)][path][
-                                str(sum_delay)] = 1
-                        else:
-                            self.sim.nodes[node_].end_to_end_delay[str(packet.priority)][path][
-                                str(sum_delay)] += 1
+            packet.arrival_time[self.id] = round(self.now, 2)
+            packet.in_queue_time[self.id] = round(self.now, 2)
+            packet.out_queue_time[self.id] = round(self.now, 2)
+            # print('arrival_time', packet.arrival_time)
+            # print('in_queue_time', packet.in_queue_time)
+            # print('out_queue_time', packet.out_queue_time)
+            # print('e2ed_delay', packet.e2ed_delay)
+            self.recv_for_me.append(packet.id)
+            self.e2ed.append(round(packet.e2ed_delay, 2))
+            self.add_samples(packet)

@@ -1,12 +1,22 @@
-from GeneralTopology.util.model_config import *
-from GeneralTopology.util.utils import *
-import random
-
-
-class PhyLayer:
+from config import *
+from utils import *
+class TonPhyLayer:
+    # Setting up the physical layer
+    LAYER_NAME = 'phy'
     def __init__(self, node):
-        self.layer_name = 'phy'
         self.node = node
+        self._current_rx_count = 0
+        self._channel_busy_start = 0
+        self.total_tx = 0
+        self.total_rx = 0
+        self.total_collision = 0
+        self.total_error = 0
+        self.total_bits_tx = 0
+        self.total_bits_rx = 0
+        self.total_channel_busy = 0
+        self.total_channel_tx = 0
+
+    def reset(self):
         self._current_rx_count = 0
         self._channel_busy_start = 0
         self.total_tx = 0
@@ -38,21 +48,17 @@ class PhyLayer:
     def on_rx_end(self, pdu):
         prev_node = self.node.sim.nodes[pdu.pdu_src]
         interfere_dist = []
-        slot_list = SLOT_LIST[FRAME_SLOT[prev_node.node_id]]
+        slot_list = SLOT_LIST[FRAME_SLOT[prev_node.id]]
         for node_id in slot_list:
-            if node_id == prev_node.node_id:
+            if node_id == prev_node.id:
                 continue
             interfere_dist.append(distance(self.node.sim.nodes[node_id].pos, self.node.pos))
         per = getPER(prev_node, self.node, TRANSMITTING_POWER, NOISE_STRENGTH, interfere_dist, BAND_WIDTH)
-        # per = 0.2
-        # print(per)
-        # print(prev_node.node_id, self.node.node_id, dist, per)
         if per:
             self.node.mac.on_receive_pdu(pdu)
             self.total_rx += 1
         else:
             self.total_error += 1
-
     def on_collision(self, pdu):
         pass
 

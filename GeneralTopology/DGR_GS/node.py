@@ -84,7 +84,7 @@ class Node:
                           packet)
             self.mac.addPdu(mac_pdu, flow_type)
 
-            if len(self.mac.flow1_queue) + len(self.mac.flow2_queue) + len(self.mac.flow3_queue) == 1:
+            if len(self.mac.queue)  == 1:
                 self.sim.env.process(self.mac.process_mac_queue())
 
     def get_next_node(self, packet, stage):
@@ -139,7 +139,7 @@ class Node:
                               packet)
                 self.mac.addPdu(mac_pdu, mac_pdu.payload.flow_type)
 
-                if len(self.mac.flow1_queue) + len(self.mac.flow2_queue) + len(self.mac.flow3_queue) == 1:
+                if len(self.mac.queue) == 1:
                     self.sim.env.process(self.mac.process_mac_queue())
             else:
                 if self.sim.loss_cnt.get(packet.flow_type):

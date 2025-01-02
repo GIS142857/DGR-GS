@@ -135,7 +135,7 @@ class Simulator:
         print("\nCalculating Avg queue delay...")
         delay = {}
         for key in queue_delay:
-            delay[key] = round(np.mean(queue_delay[key]), 2)
+            delay[key] = round(np.mean(queue_delay[key])/1000, 2)
         print(delay)
 
     def get_avg_e2ed_delay(self, e2ed_delay):
@@ -143,7 +143,7 @@ class Simulator:
         avg_e2ed_delay = {}
         for key in e2ed_delay:
             # print(key, round(np.mean(e2ed_delay[key]), 2))
-            avg_e2ed_delay[key] = round(np.mean(e2ed_delay[key]), 2)
+            avg_e2ed_delay[key] = round(np.mean(e2ed_delay[key])/1000, 2)
             if self.episode == 50:
                 print(key, e2ed_delay[key])
         print(avg_e2ed_delay)
@@ -154,5 +154,5 @@ class Simulator:
         for key in e2ed_delay:
             if key[0] in ['0', '1', '2']:
                 # print(key, round(np.max(e2ed_delay[key]), 2))
-                worst_case_e2ed_delay[key] = round(np.max(e2ed_delay[key]), 2)
+                worst_case_e2ed_delay[key] = round(np.max(e2ed_delay[key])/1000, 2)
         print(max(worst_case_e2ed_delay.items(), key=lambda item: item[1]))

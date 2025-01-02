@@ -93,7 +93,7 @@ SLOT_LIST = {  # slot: nodes
     5: [7, 10],
     6: [8],
 }
-SLOT_DURATION = 2000  # us
+SLOT_DURATION = 2200  # us
 MAC_HEADER_LENGTH = 32  # 32 byte fixed fields of a mac packet
 MAC_PAYLOAD_LENGTH = PACKET_LENGTH
 MAC_PDU_LENGTH = MAC_HEADER_LENGTH + PACKET_PAYLOAD_LENGTH
@@ -103,7 +103,7 @@ PHY_TYPE = 'Rayleigh-Fading Model'
 ALPHA = 4
 BETA = 1
 LIGHT_SPEED = 3e8  # light speed (m/s)
-BAND_WIDTH = 5 * UNIT  # HZ
+BAND_WIDTH = 4 * UNIT  # HZ
 NOISE_STRENGTH = -174.0  # env-noise power:-174 dBm/Hz
 TRANSMITTING_POWER = 8  # dBm
 GAIN_T = 1  # 发射天线增益
