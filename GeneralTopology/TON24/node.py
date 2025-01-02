@@ -96,10 +96,24 @@ class Node(object):
         # print('len(self.neighbors)', len(self.neighbors), self.neighbors)
         # print(packet.des, self.id, self.neighbors)
         # print(self.id, packet.des, self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des))
-        next_node = random.choices(self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des_node_id))[0]
-        if self.sim.episode > 500:
-            print('best:', self.get_best_action(packet))
-
+        # if len(self.neighbors) == 1:
+        #     next_node = self.neighbors[0]
+        # else:
+        #     next_node = random.choices(self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des_node_id))[0]
+        # if self.sim.episode > 300:
+        #     # print('best:', self.id, self.get_best_action(packet))
+        #     best_action = self.get_best_action(packet)
+        #     if best_action in self.neighbors:
+        #         next_node = best_action
+        # print(self.id)
+        opt_node = self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des_node_id)
+        best_action = self.get_best_action(packet)
+        if best_action in opt_node:
+            next_node = best_action
+        else:
+            next_node = random.choices(opt_node)[0]
+        # print(self.id, self.get_best_action(packet), next_node)
+        # next_node = random.choices(opt_node)[0]
         return next_node
 
     def dfs_find_all_paths(self, adj_table, start, target, path=None, all_paths=None):
@@ -134,16 +148,29 @@ class Node(object):
             state.append(self.nb_pri_queues[nb][packet.flow_type])
         while len(state) < 4:
             state.append(0)
+        # print(state)
         state = torch.tensor(state, dtype=torch.float32)
         state = state.to(self.device)
         qu = self.agent.model.forward(1, state)
-        qu = qu.reshape(1, -1).squeeze().detach()
-        # print('qu', qu)
-        worst_delay = qu[-1]
-        print('worst_delay', worst_delay)
-        l = int(len(qu) / 2)
-        average_delay = qu.mean()
-        return worst_delay
+        mean_next_quantiles = qu.mean(dim=1)  # [batch_size, num_actions]
+        # print(mean_next_quantiles.shape)
+        min_action_idx = mean_next_quantiles.argmin(dim=-1).item()  # Get the index of the minimum mean value (scalar)
+        # print('Best action index:', min_action_idx)
+        best_action_quantiles = qu[:, :, min_action_idx].unsqueeze(-1)  # Shape: [1, tau_N, 1]
+        # print('Best action quantiles:', best_action_quantiles)
+
+        # Reshape the quantiles and detach the tensor from the computation graph
+        qu = qu.squeeze().detach()  # Shape: [tau_N, num_actions]
+
+        # Extract the worst delay (last element in quantiles)
+        worst_delay = qu[-1]  # Assuming the worst delay is the last quantile
+        # print('Worst delay:', worst_delay)
+
+        # Calculate the average delay across all quantiles
+        average_delay = qu.mean()  # Shape: scalar
+        # print('Average delay:', average_delay)
+
+        return self.neighbors[int(min_action_idx)]
 
 
     def run(self):
@@ -230,46 +257,40 @@ class Node(object):
         return quantile_huber_loss
 
     def calculate_loss(self, batch_size, states, actions, action_idxs, rewards, next_states, dones, node):
-        # Calculate quantile values of current states and actions at taus.
-        current_s_quantiles = node.agent.model.forward(batch_size, states)
-        # print(current_s_quantiles, action_idxs)
-        current_sa_quantiles = torch.zeros(batch_size, node.agent.tau_N, 1).to(self.device)
-        for i in range(batch_size):
-            current_sa_quantiles[i] = current_s_quantiles[i, :, int(action_idxs[i])].unsqueeze(-1)
-        print(current_sa_quantiles.shape)
-        # assert current_sa_quantiles.shape == (batch_size, node.agent.tau_N, node.agent.model.num_actions)
-
-        # Initialize target_sa_quantiles as an empty tensor to concatenate in the loop
-        target_sa_quantiles = torch.zeros(batch_size, node.agent.tau_N, 1).to(self.device)
-
+        # Calculate quantile values of current states and actions at taus
+        current_s_quantiles = node.agent.model.forward(batch_size, states)  # [batch_size, tau_N, num_actions]
+        action_idxs = action_idxs.long().unsqueeze(-1).repeat(1, node.agent.tau_N).unsqueeze(-1)  # [batch_size, tau_N, 1]
+        current_sa_quantiles = current_s_quantiles.gather(-1, action_idxs)  # [batch_size, tau_N, 1]
+        # print(current_sa_quantiles.shape)
+        # Calculate target quantiles for next states
         with torch.no_grad():
-            for i in range(batch_size):
-                var_next_s = next_states[i]
-                next_node = int(actions[i])
-                next_qu_ = node.agent.model.forward(1, var_next_s)
-                # 计算每个动作分布的平均值
-                action_means = next_qu_.mean(dim=-1)  # Shape: [64, 500]
-                # 找到平均值最小的动作索引
-                min_action_indices = action_means.argmin(dim=-1)  # Shape: [64]
-                # 初始化用于存储最小动作分布的张量
-                min_action_distributions = torch.zeros(1, 500, 1)  # Shape: [1, 500, 1]
-                # 提取对应动作的分布
-                min_action_distributions[:, :, 0] = next_qu_[:, :, min_action_indices[i]]
-                target_sa_quantiles_ = min_action_distributions
-                for j in range(next_qu_.shape[1]):
-                    target_sa_quantiles_[0][j][0] = rewards[i]/1000 + (1.0 - dones[i]) * next_qu_[0][j][0]
-                target_sa_quantiles = torch.cat((target_sa_quantiles, target_sa_quantiles_), 0)
-            target_qu = target_sa_quantiles
-            target_qu = target_qu.transpose(1, 2)
-            target_qu = target_qu.to(self.device)
+            next_quantiles = node.agent.model.forward(batch_size, next_states)  # [batch_size, tau_N, num_actions]
+            # print(next_quantiles.shape)
+            # 计算每个动作分布的平均值
+            mean_next_quantiles = next_quantiles.mean(dim=1)  # [batch_size, num_actions]
+            # print(mean_next_quantiles.shape)
+            # 找到平均值最小的动作索引
+            min_action_indices = mean_next_quantiles.argmin(dim=-1).unsqueeze(-1).unsqueeze(-1).repeat(1, node.agent.tau_N, 1)  # [batch_size, tau_N, 1]
+            # print(min_action_indices.shape)
+            # 使用 gather 从 next_quantiles 中获取最小的动作分布
+            target_sa_quantiles = next_quantiles.gather(-1, min_action_indices)  # [batch_size, tau_N, 1]
+            # print(target_sa_quantiles.shape)
+            # 使用 rewards 和 dones 计算目标量化值
+            rewards_expanded = rewards.unsqueeze(-1).unsqueeze(-1)  # [batch_size, 1, 1]
+            dones_expanded = dones.unsqueeze(-1).unsqueeze(-1)  # [batch_size, 1, 1]
+            # 使用 rewards 和 dones 计算目标量化值
+            target_sa_quantiles = rewards_expanded / 1000 + (1 - dones_expanded) * target_sa_quantiles
 
-        # print(current_sa_quantiles, target_qu)
-        print(target_qu.shape, current_sa_quantiles.shape)
+            target_sa_quantiles = target_sa_quantiles.transpose(1, 2)
+            assert target_sa_quantiles.shape == (batch_size, 1, self.agent.tau_N)
 
-        td_errors = target_qu - current_sa_quantiles
+        # Compute TD errors
+        td_errors = target_sa_quantiles - current_sa_quantiles  # [batch_size, tau_N, 1]
         tau_N = node.agent.tau_N
         taus = torch.arange(0, tau_N + 1, device=self.device, dtype=torch.float32) / tau_N
         tau_hats = ((taus[1:] + taus[:-1]) / 2.0).view(1, tau_N)
+
+        # Compute Quantile Huber Loss
         kappa = 1
         quantile_huber_loss = self.calculate_quantile_huber_loss(td_errors, tau_hats, kappa)
         return quantile_huber_loss, td_errors.detach().abs().sum(dim=1).mean(dim=1, keepdim=True)

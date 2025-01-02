@@ -53,7 +53,10 @@ class TonMacLayer:
             if len(opt_pdu) > 0:
                 trans_pdu = opt_pdu[0]
                 for pdu in opt_pdu:
-                    remain_time = DEADLINE[pdu.payload.flow_type] - self.node.now + pdu.payload.create_time
+                    queue_length = max(len(self.queues[pdu.payload.flow_type]), 1)
+                    pri = ARRIVAL_RATE[pdu.payload.flow_type]/sum(ARRIVAL_RATE.values())
+                    remain_time = (DEADLINE[pdu.payload.flow_type] - self.node.now + pdu.payload.create_time)*pri
+                    remain_time = remain_time/queue_length
                     if remain_time < max_time:
                         max_time = remain_time
                         trans_pdu = pdu
