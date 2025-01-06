@@ -43,7 +43,7 @@ class Node:
         self.sim.env.process(self.src_generate_packets())
 
     def src_generate_packets(self):
-        duration = self.sim.sim_time / 2
+        duration = 2.5*UNIT
         while self.sim.env.now < self.node_start_time + duration:
 
             if self.sim.env.now < self.node_start_time + duration / 2:
@@ -101,16 +101,16 @@ class Node:
         else:
             for key, val in route_vector.items():
                 route[key] = val - delta * vector_u[key]
-        if self.sim.episode > 0:
-            remain_time = DEADLINE[packet.flow_type] - packet.arrival_time[self.node_id] + packet.create_time
-            if remain_time <= 0:
-                return -1
-            r_j = self.get_r_j(remain_time, self.route_tb.all_paths_cdf, packet)
-            if sum(r_j.values()) == 0:
-                self.sim.can_not_dg += 1  # can't guarantee
-            else:
-                for key in route:
-                    route[key] = route[key] * r_j[key]
+        # if self.sim.episode > 0:
+        #     remain_time = DEADLINE[packet.flow_type] - packet.arrival_time[self.node_id] + packet.create_time
+        #     if remain_time <= 0:
+        #         return -1
+        #     r_j = self.get_r_j(remain_time, self.route_tb.all_paths_cdf, packet)
+        #     if sum(r_j.values()) == 0:
+        #         self.sim.can_not_dg += 1  # can't guarantee
+        #     else:
+        #         for key in route:
+        #             route[key] = route[key] * r_j[key]
         paths = list(route.keys())
         probabilities = list(route.values())
         selected_path = random.choices(paths, weights=probabilities, k=1)[0]

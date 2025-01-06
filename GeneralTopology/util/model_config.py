@@ -93,7 +93,7 @@ SLOT_LIST = {  # slot: nodes
     5: [7, 10],
     6: [8],
 }
-SLOT_DURATION = 2200  # us
+SLOT_DURATION = 2500  # us
 MAC_HEADER_LENGTH = 32  # 32 byte fixed fields of a mac packet
 MAC_PAYLOAD_LENGTH = PACKET_LENGTH
 MAC_PDU_LENGTH = MAC_HEADER_LENGTH + PACKET_PAYLOAD_LENGTH

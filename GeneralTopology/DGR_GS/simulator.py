@@ -46,7 +46,7 @@ class Simulator:
 
     def reset(self):
         while True:
-            if self.update_done:
+            if self.update_done or self.episode == 0:
                 for node in self.nodes:
                     node.mac.queues = []
                     node.send_cnt = 0

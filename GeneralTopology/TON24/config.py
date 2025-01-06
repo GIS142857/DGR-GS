@@ -60,6 +60,11 @@ MAX_RETRIES = 5  # maximum retransmission attempts
 PACKET_HEADER_LENGTH = 128  # bit
 PACKET_PAYLOAD_LENGTH = 1000 * 8  # bit
 PACKET_LENGTH = PACKET_HEADER_LENGTH + PACKET_PAYLOAD_LENGTH
+FLOW_PRI = {
+    'flow1': 0.75,
+    'flow2': 0.15,
+    'flow3': 0.1,
+}
 ARRIVAL_RATE = {  # packets arrival_rates of src_node (us)
     'flow1': 19500,
     'flow2': 12500,
@@ -99,7 +104,7 @@ SLOT_LIST = {  # slot: nodes
     5: [7, 10],
     6: [8],
 }
-SLOT_DURATION = 3000  # us
+SLOT_DURATION = 2500  # us
 MAC_HEADER_LENGTH = 32  # 32 byte fixed fields of a mac packet
 MAC_PAYLOAD_LENGTH = PACKET_LENGTH
 MAC_PDU_LENGTH = MAC_HEADER_LENGTH + PACKET_PAYLOAD_LENGTH

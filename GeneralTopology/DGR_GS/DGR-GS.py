@@ -8,6 +8,7 @@ def main():
         sim.episode = e
 
         # print(vars(sim))
+        sim.reset()
 
         sim.run()
         # print(sim.paths_delay)
@@ -28,7 +29,7 @@ def main():
             for node in sim.nodes:
                 print(node.route_tb.route_vector)
 
-        sim.reset()
+
 
 
 if __name__ == "__main__":

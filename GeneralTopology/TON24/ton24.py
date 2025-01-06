@@ -18,7 +18,7 @@ for id in range(SUM_NODES):
 sim.init_agent()
 
 # start the simulation
-episodes = 2000
+episodes = 5000
 # sim.episode = episodes
 for episode in range(episodes):
     print('\nepisode', episode)

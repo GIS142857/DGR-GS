@@ -93,27 +93,15 @@ class Node(object):
         for nb in self.neighbors:
             if nb == packet.des_node_id:
                 return nb
-        # print('len(self.neighbors)', len(self.neighbors), self.neighbors)
-        # print(packet.des, self.id, self.neighbors)
-        # print(self.id, packet.des, self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des))
-        # if len(self.neighbors) == 1:
-        #     next_node = self.neighbors[0]
-        # else:
-        #     next_node = random.choices(self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des_node_id))[0]
-        # if self.sim.episode > 300:
-        #     # print('best:', self.id, self.get_best_action(packet))
-        #     best_action = self.get_best_action(packet)
-        #     if best_action in self.neighbors:
-        #         next_node = best_action
-        # print(self.id)
         opt_node = self.dfs_find_all_paths(ADJ_TABLE, self.id, packet.des_node_id)
-        best_action = self.get_best_action(packet)
-        if best_action in opt_node:
-            next_node = best_action
-        else:
+        if self.sim.episode < 100:
             next_node = random.choices(opt_node)[0]
-        # print(self.id, self.get_best_action(packet), next_node)
-        # next_node = random.choices(opt_node)[0]
+        else:
+            best_action = self.get_best_action(packet)
+            if best_action in opt_node:
+                next_node = best_action
+            else:
+                next_node = random.choices(opt_node)[0]
         return next_node
 
     def dfs_find_all_paths(self, adj_table, start, target, path=None, all_paths=None):

@@ -35,7 +35,7 @@ class MacLayer:
                 return
             self.has_reces.append(pdu.payload.id)
             self.node.on_receive_packet(pdu.payload)
-            last_node = pdu.pdu_src
-            if len(self.node.sim.nodes[last_node].mac.queue) > 0:
-                self.node.sim.nodes[last_node].mac.queue.pop(0)
+            prev_node = pdu.pdu_src
+            if len(self.node.sim.nodes[prev_node].mac.queue) > 0:
+                self.node.sim.nodes[prev_node].mac.queue.pop(0)
 
