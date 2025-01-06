@@ -38,15 +38,16 @@ class MacLayer:
             if len(self.flow3_queue) > 0:
                 check_pdu_list.append(self.flow3_queue[0])
             max_time = 5*UNIT
-            trans_pdu = check_pdu_list[0]
-            for pdu in check_pdu_list:
-                remain_time = DEADLINE[pdu.payload.flow_type] - self.node.now + pdu.payload.create_time
-                if remain_time < max_time:
-                    max_time = remain_time
-                    trans_pdu = pdu
-            trans_pdu.payload.out_queue_time[self.node.node_id] = self.node.now
-            self.node.phy.send_pdu(trans_pdu)
-            yield self.node.sim.env.timeout(self.node.sim.slot_duration)
+            if len(check_pdu_list) > 0:
+                trans_pdu = check_pdu_list[0]
+                for pdu in check_pdu_list:
+                    remain_time = DEADLINE[pdu.payload.flow_type] - self.node.now + pdu.payload.create_time
+                    if remain_time < max_time:
+                        max_time = remain_time
+                        trans_pdu = pdu
+                trans_pdu.payload.out_queue_time[self.node.node_id] = self.node.now
+                self.node.phy.send_pdu(trans_pdu)
+                yield self.node.sim.env.timeout(self.node.sim.slot_duration)
 
     def on_receive_pdu(self, pdu):
         if pdu.pdu_des == self.node.node_id:

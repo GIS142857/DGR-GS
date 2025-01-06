@@ -45,7 +45,7 @@ class Node:
         self.sim.env.process(self.src_generate_packets())
 
     def src_generate_packets(self):
-        duration = self.sim.sim_time / 2
+        duration = 2.5*UNIT
         while self.sim.env.now < self.node_start_time + duration:
 
             if self.sim.env.now < self.node_start_time + duration / 2:
