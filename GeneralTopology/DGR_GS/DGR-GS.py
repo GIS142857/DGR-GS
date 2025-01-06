@@ -17,6 +17,9 @@ def main():
 
         print("send_cnt: ", sim.nodes[0].send_cnt, sim.nodes[1].send_cnt, sim.nodes[2].send_cnt)
         print("recv_cnt: ", sim.nodes[15].recv_cnt, sim.nodes[16].recv_cnt, sim.nodes[17].recv_cnt)
+        for node_id in FLOW_DICT.keys():
+            if sim.nodes[FLOW_DICT[node_id]].recv_cnt <= 0:
+                sim.nodes[node_id].route_tb.init_route_vector()
         print("can't guarantee count: ", sim.can_not_dg)
         print("loss_history: ", sim.loss_cnt)
         sim.get_avg_queue_delay(sim.queue_delay)

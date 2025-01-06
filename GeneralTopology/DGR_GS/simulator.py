@@ -1,5 +1,7 @@
 import numpy as np
 import simpy
+
+from GeneralTopology.DGR_GS.exp_buffer import RouteExpBuffer
 from node import Node
 from GeneralTopology.util.utils import *
 from simpy.util import start_delayed
@@ -24,6 +26,7 @@ class Simulator:
         self.episode = 0
         self.can_not_dg = 0
         self.loss_cnt = {}
+        self.route_exp_buffer = RouteExpBuffer(MAX_EXPERIENCE_SIZE)
         self.default_e2ed_delay = {}  # {'0-15': 4499.55, ...}
         self.e2ed_delay = {}  # {'0-15':[5954.83, 4594.83, 5554.83, ...]}
         self.paths_delay = {}  # {'0-3-5-7-9':[5954.83, 4594.83, 5554.83, ...]}
@@ -121,8 +124,9 @@ class Simulator:
                 # update all_cdf [k, loc, scale]
                 for path in find_all_paths(self.adj_T, node.node_id, des_node):
                     path_str = '-'.join(map(str, path))
+                    # print(path_str, len(self.route_exp_buffer.get_experiences(path_str)))
                     try:
-                        node.route_tb.all_paths_cdf[path_str] = data_to_cdf(self.paths_delay[path_str])
+                        node.route_tb.all_paths_cdf[path_str] = data_to_cdf(self.route_exp_buffer.get_experiences(path_str))
                     except:
                         pass
             # print(node.route_tb.route_vector, "\n")

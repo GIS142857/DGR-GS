@@ -43,7 +43,7 @@ class Node:
         self.sim.env.process(self.src_generate_packets())
 
     def src_generate_packets(self):
-        duration = 2.5*UNIT
+        duration = (SIM_TIME - 1*UNIT)/2
         while self.sim.env.now < self.node_start_time + duration:
 
             if self.sim.env.now < self.node_start_time + duration / 2:
@@ -197,6 +197,9 @@ class Node:
                 path_key = '-'.join(map(str, packet.trans_path[i:]))
                 e2ed_key = str(src_node_id) + '-' + str(des_node_id)
                 e2ed_delay = round(packet.arrival_time[des_node_id] - packet.arrival_time[src_node_id], 2)
+
+
+                self.sim.route_exp_buffer.add_experience(path_key, e2ed_delay)
 
                 if self.sim.paths_delay.get(path_key):
                     self.sim.paths_delay[path_key].append(e2ed_delay)
